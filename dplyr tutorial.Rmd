@@ -1,0 +1,319 @@
+---
+title: "Data manipulation in R"
+output: html_notebook
+---
+
+Examples of dplyr functions in R 
+
+First download the data and make sure you have dplyr installed
+
+```{r}
+#install.packages("dplyr")
+library(dplyr)
+
+library(downloader)
+url <- "https://raw.githubusercontent.com/genomicsclass/dagdata/master/inst/extdata/msleep_ggplot2.csv"
+filename <- "msleep_ggplot2.csv"
+if (!file.exists(filename)) download(url,filename)
+msleep <- read.csv("msleep_ggplot2.csv")
+head(msleep)
+
+
+
+```
+
+#Key dplyr verbs
+
+
+`select()`	select columns   
+`filter()`	filter rows   
+`arrange()`	re-order or arrange rows   
+`mutate()`	create new columns   
+`summarise()` summarise values   
+`group_by()`	allows for group operations in the “split-apply-combine” concept   
+
+#Select columns
+
+```{r}
+#select columns
+sleepData <- dplyr::select(msleep, name, sleep_total)
+head(sleepData)
+
+#remove columns
+head(dplyr::select(msleep, -name))
+
+#select by a range of columns :
+head(dplyr::select(msleep, name:order))
+
+
+
+```
+
+try other commands like starts_with("InsertCharacter")
+
+What about if the variable ends with a certain character?   
+Contains a certain character? (`contains()`)   
+Matches a regular expression? (`matches()`)   
+Matches a numerical range? (`num_range()`)   
+Is a variable in a character vector? (`one_of()`)   
+All of them? (`everything()`) 
+
+e.g. head(dplyr::select(msleep, starts_with("vo"))) will select columns starting with "vo"
+
+#Reordering the selected columns
+
+What if you want to easily reorder columns and you dont want to type all the column names?   
+
+Or rename column names?
+```{r}
+
+dplyr::select(msleep, vore, everything())
+
+rename(msleep, cvore = vore)
+
+
+```
+
+
+#Selecting rows using filter
+
+`filter` allows you extract rows
+
+```{r}
+filter(msleep, sleep_total >= 16)
+
+filter(msleep, sleep_total >= 16, bodywt >=1)
+
+filter(msleep, vore %in% c("omni", "carni"))
+
+filter(msleep, !conservation%in% c("lc", "domesticated"))
+
+#removing duplicates
+
+distinct(msleep)
+distinct(msleep, order, .keep_all= TRUE)
+
+```
+
+Try with using `&` or `|` to select using multiple criteria   
+
+What about if want to select things not in that criteria?   
+
+What about selecting rows based on containing some value? hint: grepl   
+filter(msleep, grepl("Pr",order))   
+
+What about selecting a random number of rows? (sample_n(msleep, 3))   
+
+Or a random percentage of rows? (sample_frac(msleep, 0.1))   
+
+#Piping
+
+dplyr uses the pipe operator  `%>%`  which allows you to pipe output from one function to the input to another function. This means you can read functions from left to right rather than nesting functions, which can get very confusing!
+
+Using the `.` means that you are referencing back to the data piped into the function
+
+```{r}
+#No piping
+head(dplyr::select(msleep, name, sleep_total))
+
+#Piping
+msleep %>% 
+    dplyr::select(name, sleep_total) %>% 
+    head
+
+```
+
+#More data handling options
+
+What if you want to arrange by e.g. by date or by name?
+
+```{r}
+msleep %>% arrange(order) %>% head
+
+#more complex
+
+msleep %>% 
+    dplyr::select(name, order, sleep_total) %>%
+    arrange(order, sleep_total) %>% 
+    head
+
+msleep %>% 
+    dplyr::select(name, order, sleep_total) %>%
+    arrange(order, sleep_total) %>% 
+    filter(sleep_total >= 16)
+
+```
+
+What if you want to arrange by multiple variables? arrange(msleep, vore, conservation)   
+Or one ascending / one descending? arrange(msleep, desc(vore), conservation)   
+
+#Summarising
+
+used to summarise data. Can involve base functions, own functions defined within the pipe / function or own functions defined outside the operation
+
+```{r}
+msleep%>%summarise(Mean_ST = mean(sleep_total), Med_ST = median(sleep_total))
+
+#summarise at - allows summary by partiuclar variables
+
+msleep%>%summarise_at(vars(sleep_cycle, sleep_total), funs(n(), mean, median))
+
+#play with other summarise variables
+
+#e.g. including custom functions
+summarise_at(msleep,vars(sleep_cycle,sleep_total), function(x) var(x - mean(x)))
+
+
+```
+
+What if you want to summarise all of the numeric variables? summarise_if(msleep, is.numeric, funs(n(),mean,median))   
+
+WHat if you want to summarise by factors? E.g check the number of levels / categories and count the missing observations: summarise_all(msleep["vore"], funs(nlevels(.), nmiss=sum(is.na(.))))   
+
+#Add new columns - Mutate
+
+The `mutate` function adds new columns to the dataframe   
+
+```{r}
+msleep %>% 
+    mutate(rem_proportion = sleep_rem / sleep_total) %>%
+    head
+
+#add more than one
+msleep %>% 
+    mutate(rem_proportion = sleep_rem / sleep_total, 
+           bodywt_grams = bodywt * 1000) %>%
+    head
+
+```
+
+What if you want to apply a function to all the columns? (mutate_all(msleep, funs("new" = .* 1000)))   
+
+Investigate the other functions of mutate using the tab    
+
+#Grouping and summarising
+
+Piping comes into its when you want to group by a particular variable then summarise   
+
+```{r}
+msleep %>% 
+    group_by(order) %>%
+    summarise(avg_sleep = mean(sleep_total), 
+              min_sleep = min(sleep_total), 
+              max_sleep = max(sleep_total),
+              total = n())
+#how would you sort this by max sleep?
+#What about if there are nas? 
+#OR
+msleep %>% group_by(vore) %>%
+  summarise_at(vars(sleep_cycle:sleep_total), funs(n(), mean(., na.rm = TRUE)))
+
+
+```
+
+#Do function
+
+Function allows you to compute within groups   
+
+```{r}
+#eg get the top two rows from "cd", "nt" and "en" categories of conservation
+msleep %>% filter(conservation%in% c("cd", "nt","en")) %>% group_by(conservation) %>%
+  do(head( . , 2))
+
+#Slice is used to select 
+msleep %>% dplyr::select(conservation,sleep_total) %>%
+  filter(conservation %in% c("cd", "nt","en")) %>%
+  group_by(conservation) %>%
+  do(arrange(.,desc(sleep_total))) %>%  slice(3)
+
+#slice means select the third row
+
+```
+
+
+#Join functions
+
+This allows you to merge datasets together (like merge function)
+
+1. Make a new dataframe by selecting the name columns of msleep, and creating a new dataframe.    
+
+2. Create new columns either from calculating new variables for sleep or sample from a distribution   
+
+3. Try out some of the join functions   
+
+4. Try removing some of the rows from one or both datasets (msleep and the new one) and playing with `left_join` and `right_join`   
+
+Check the help to see what other join functions there are   
+
+#Vertical combinations
+
+Using `intersect` (rows that appear in both x and y)   
+`union` (rows that appear in either or both x and y)  
+`setdiff` (rows that appear in x but not y)   
+
+```{r}
+#set up data for example
+mtcars$model <- rownames(mtcars)
+first <- mtcars[1:20, ]
+second <- mtcars[10:32, ]
+
+#intersect selects the unique rows common to both datasets
+intersect(first, second)
+
+```
+
+
+#Other useful functions
+
+1. `bind_rows` and `bind_cols` work in the same way as `rbind` and `cbind`, and can be used within piping (nb so can `rbind` and `cbind`)   
+
+2. rowwise() allows you to apply a function across rows (useful for supporting complex operations to be applied to each row)   
+
+3. Percentiles eg quantile()   
+
+
+```{r}
+msleep %>% group_by(order) %>%
+  summarise(Pecentile_25=quantile(sleep_total, probs=0.25),
+            Pecentile_50=quantile(sleep_total, probs=0.5),
+            Pecentile_75=quantile(sleep_total, probs=0.75),
+            Pecentile_99=quantile(sleep_total, probs=0.99))
+
+#throw in a plot
+
+msleep %>% group_by(order) %>%
+  summarise(Percentile_25=quantile(sleep_total, probs=0.25),
+            Percentile_50=quantile(sleep_total, probs=0.5),
+            Percentile_75=quantile(sleep_total, probs=0.75),
+            Percentile_99=quantile(sleep_total, probs=0.99)) %>%
+  ggplot(.)+geom_bar(aes(order, Percentile_25), stat = "identity")+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+#Automate model building
+
+Using `do` function you can automate model building
+
+```{r}
+by_cyl <- group_by(mtcars, cyl)
+models <- by_cyl %>% do(mod = lm(mpg ~ disp, data = .))
+summarise(models, rsq = summary(mod)$r.squared)
+models %>% do(data.frame(
+  var = names(coef(.$mod)),
+  coef(summary(.$mod)))
+)                                         
+                                                                 
+```
+
+
+
+#If family of functions
+
+These come into play with `mutate`, `summarise` etc when a condition is met   
+
+e.g. `select_if`, `summarise_if`, `mutate_if`, `na_if` (this converts all given values to na, eg if you want to find "" or have an indicator value as a null)   
+```{r}
+msleep1 = mutate_if(msleep, is.numeric, funs("new" = .* 1000))
+
+```
+
